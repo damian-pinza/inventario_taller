@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carga masiva · Talleres</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <style>
+    .steps{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+    @media (max-width:820px){.steps{grid-template-columns:1fr}}
+    .step{display:flex;gap:14px;align-items:flex-start}
+    .step .num{width:30px;height:30px;border-radius:50%;background:var(--color-primary);color:#fff;display:grid;place-items:center;
+      font-family:'Space Grotesk',sans-serif;font-weight:700;flex-shrink:0;font-size:15px}
+    .step h3{font-size:15.5px;margin-bottom:4px}
+    .step p{font-size:13px;color:var(--muted);margin-bottom:12px}
+    .dropzone{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;cursor:pointer;transition:.15s;background:var(--bg-2)}
+    .dropzone:hover,.dropzone.drag{border-color:var(--color-primary);background:var(--color-primary-soft)}
+    .dropzone svg{width:34px;height:34px;color:var(--muted-2);margin-bottom:8px}
+    .dropzone .dz-t{font-weight:600;font-size:14px}
+    .dropzone .dz-s{font-size:12.5px;color:var(--muted);margin-top:3px}
+    .fila-error{background:var(--baja-bg)}
+    .fila-warn{background:var(--mant-bg)}
+    .est-pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+    .est-valida{background:var(--op-bg);color:var(--op);border:1px solid var(--op-line)}
+    .est-advertencia{background:var(--mant-bg);color:var(--mant);border:1px solid var(--mant-line)}
+    .est-error{background:var(--baja-bg);color:var(--baja);border:1px solid var(--baja-line)}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <button class="btn btn-ghost btn-sm mb-2" onclick="location.href='inventario.html'" id="btnVolver"></button>
+
+        <div class="steps">
+          <div class="card card-pad step">
+            <div class="num">1</div>
+            <div style="flex:1">
+              <h3>Descarga la plantilla</h3>
+              <p>Usa la plantilla oficial. Incluye listas desplegables de estados y una hoja con instrucciones. Las categorías y talleres deben existir previamente con el mismo nombre.</p>
+              <button class="btn btn-ghost" id="btnPlantilla"></button>
+            </div>
+          </div>
+          <div class="card card-pad step">
+            <div class="num">2</div>
+            <div style="flex:1">
+              <h3>Sube el archivo completado</h3>
+              <p>Validaremos cada fila antes de importar. Nada se guarda hasta que confirmes.</p>
+              <div class="dropzone" id="dz">
+                <input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+                <div id="dzIcon"></div>
+                <div class="dz-t" id="dzText">Haz clic o arrastra tu archivo .xlsx aquí</div>
+                <div class="dz-s" id="dzSub">Solo archivos Excel (.xlsx)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="resultado"></div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/ui.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/app.js"></script>
+  <script>
+    if (!Auth.requireRole('jefe_taller')) { /* redirige */ }
+    Shell.init({ active: 'inventario', title: 'Carga masiva desde Excel' });
+
+    document.getElementById('btnVolver').innerHTML = ICON.back + '<span>Volver al inventario</span>';
+    document.getElementById('btnPlantilla').innerHTML = ICON.download + '<span>Descargar plantilla</span>';
+    document.getElementById('dzIcon').innerHTML = ICON.upload;
+
+    document.getElementById('btnPlantilla').onclick = async () => {
+      try { await Api.download('/importar/plantilla', 'plantilla_inventario.xlsx'); }
+      catch (e) { UI.toast(e.message, 'err'); }
+    };
+
+    const dz = document.getElementById('dz');
+    const fileInput = document.getElementById('file');
+    dz.onclick = () => fileInput.click();
+    ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+    dz.addEventListener('drop', e => { if (e.dataTransfer.files.length) procesar(e.dataTransfer.files[0]); });
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) procesar(fileInput.files[0]); });
+
+    let validacion = null;
+
+    async function procesar(file){
+      if (!file.name.toLowerCase().endsWith('.xlsx')) { UI.toast('El archivo debe ser .xlsx', 'warn'); return; }
+      document.getElementById('dzText').textContent = file.name;
+      document.getElementById('dzSub').textContent = 'Validando…';
+      const cont = document.getElementById('resultado');
+      cont.innerHTML = `<div class="panel"><div class="card-pad">${UI.skelRows ? '' : ''}<div class="skel" style="height:16px;width:40%;margin-bottom:14px"></div><div class="skel" style="height:14px;width:90%;margin-bottom:10px"></div><div class="skel" style="height:14px;width:85%"></div></div></div>`;
+      try {
+        const fd = new FormData();
+        fd.append('archivo', file);
+        validacion = await Api.upload('/importar/validar', fd);
+        document.getElementById('dzSub').textContent = 'Archivo validado';
+        pintarResultado(validacion);
+      } catch (e) {
+        document.getElementById('dzSub').textContent = 'Error al validar';
+        cont.innerHTML = `<div class="empty">${ICON.alert}<h3>No se pudo validar el archivo</h3><p>${UI.esc(e.message)}</p></div>`;
+      }
+    }
+
+    function pintarResultado(v){
+      const r = v.resumen;
+      const importables = r.validas + r.advertencias;
+      const cont = document.getElementById('resultado');
+      cont.innerHTML = `
+        <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+          <div class="kpi"><div class="k-label">Filas en archivo</div><div class="k-value">${r.total}</div></div>
+          <div class="kpi op"><div class="k-label">Válidas</div><div class="k-value">${r.validas}</div></div>
+          <div class="kpi mant"><div class="k-label">Con advertencia</div><div class="k-value">${r.advertencias}</div></div>
+          <div class="kpi baja"><div class="k-label">Con error</div><div class="k-value">${r.errores}</div></div>
+        </div>
+        ${r.errores ? `<div class="alert warn mb-2">${ICON.alert}<span>Las filas con <b>error</b> no se importarán. Corrígelas en el Excel y vuelve a subir el archivo si necesitas incluirlas. Las filas con <b>advertencia</b> sí se importan (con los ajustes indicados).</span></div>` : ''}
+        <div class="panel">
+          <div class="panel-head"><h3>Vista previa</h3><div class="spacer"></div>
+            <span class="small muted">${importables} de ${r.total} se importarán</span></div>
+          <div class="table-wrap" style="max-height:440px;overflow:auto">
+            <table class="data">
+              <thead><tr><th>#</th><th>Código</th><th>Nombre</th><th>Estado fila</th><th>Detalle</th></tr></thead>
+              <tbody>${v.filas.map(f => `
+                <tr class="${f._estado === 'error' ? 'fila-error' : (f._estado === 'advertencia' ? 'fila-warn' : '')}">
+                  <td class="small muted">${f._fila}</td>
+                  <td><span class="code-chip">${UI.esc(f.datos.codigo_interno || '—')}</span></td>
+                  <td class="t-strong">${UI.esc(f.datos.nombre || '—')}</td>
+                  <td><span class="est-pill est-${f._estado}">${f._estado === 'valida' ? 'Válida' : (f._estado === 'advertencia' ? 'Advertencia' : 'Error')}</span></td>
+                  <td class="small">${UI.esc(f._mensaje || '—')}</td>
+                </tr>`).join('')}</tbody>
+            </table>
+          </div>
+          <div style="padding:14px 18px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line-2)">
+            <button class="btn btn-primary" id="btnImportar" ${importables ? '' : 'disabled'}>${ICON.upload} <span>Importar ${importables} ${importables === 1 ? 'activo' : 'activos'}</span></button>
+          </div>
+        </div>`;
+      const btn = document.getElementById('btnImportar');
+      if (btn) btn.onclick = importar;
+    }
+
+    async function importar(){
+      if (!validacion) return;
+      const importables = validacion.resumen.validas + validacion.resumen.advertencias;
+      const ok = await UI.confirm(`Se importarán ${importables} activos al inventario. ¿Deseas continuar?`, { titulo: 'Confirmar importación', ok: 'Importar' });
+      if (!ok) return;
+      const btn = document.getElementById('btnImportar'); btn.disabled = true; btn.innerHTML = 'Importando…';
+      try {
+        const res = await Api.post('/importar/ejecutar', { filas: validacion.filas });
+        const fallidas = Array.isArray(res.fallidas) ? res.fallidas.length : (res.fallidas || 0);
+        document.getElementById('resultado').innerHTML = `
+          <div class="card card-pad text-c" style="max-width:520px;margin:0 auto">
+            <div style="width:64px;height:64px;border-radius:50%;background:var(--op-bg);color:var(--op);display:grid;place-items:center;margin:6px auto 14px">
+              <span style="display:inline-flex;width:30px;height:30px">${ICON.check}</span></div>
+            <h2 style="font-family:'Space Grotesk',sans-serif;font-size:22px;margin-bottom:8px">Importación completada</h2>
+            <p class="muted" style="margin-bottom:18px">Se importaron <b style="color:var(--op)">${res.insertadas}</b> activos correctamente${fallidas ? `, <b style="color:var(--baja)">${fallidas}</b> no se pudieron insertar.` : '.'}</p>
+            <div class="row gap-sm" style="display:flex;gap:10px;justify-content:center">
+              <button class="btn btn-primary" onclick="location.href='inventario.html'">${ICON.box} <span>Ver inventario</span></button>
+              <button class="btn btn-ghost" onclick="location.reload()">${ICON.upload} <span>Importar otro archivo</span></button>
+            </div>
+          </div>`;
+        UI.toast(`${res.insertadas} activos importados.`, 'ok');
+      } catch (e) {
+        UI.toast(e.message, 'err');
+        btn.disabled = false; btn.innerHTML = ICON.upload + ` <span>Importar ${importables} activos</span>`;
+      }
+    }
+  </script>
+</body>
+</html>

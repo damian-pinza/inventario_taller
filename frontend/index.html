@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventario de Talleres</title>
+  <script src="config.js"></script>
+  <script>
+    // Redirige según haya sesión o no.
+    (function () {
+      var t = localStorage.getItem('token');
+      var exp = false;
+      try { exp = t && Date.now() >= JSON.parse(atob(t.split('.')[1])).exp * 1000; } catch (e) {}
+      location.replace((t && !exp) ? 'pages/dashboard.html' : 'pages/login.html');
+    })();
+  </script>
+</head>
+<body></body>
+</html>

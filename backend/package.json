@@ -1,0 +1,32 @@
+{
+  "name": "inventario-talleres-backend",
+  "version": "1.0.0",
+  "description": "API REST del Sistema de Inventario de Herramientas y Equipos para Talleres",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "seed": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.5.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.1",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.11.3",
+    "pdfkit": "^0.15.0",
+    "qrcode": "^1.5.4",
+    "svg-to-pdfkit": "^0.1.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
+}

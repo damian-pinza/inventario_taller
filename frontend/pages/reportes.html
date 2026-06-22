@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reportes · Talleres</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <style>
+    .rep-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+    @media (max-width:820px){.rep-grid{grid-template-columns:1fr}}
+    .rep{display:flex;flex-direction:column;gap:14px}
+    .rep .rep-top{display:flex;gap:12px;align-items:flex-start}
+    .rep .rep-ic{width:40px;height:40px;border-radius:10px;background:var(--color-primary-soft);color:var(--color-primary-d);
+      display:grid;place-items:center;flex-shrink:0}
+    .rep .rep-ic svg{width:21px;height:21px}
+    .rep h3{font-size:15.5px;margin-bottom:3px}
+    .rep .rep-desc{font-size:13px;color:var(--muted)}
+    .rep .rep-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}
+    .rep .rep-actions .btn{flex:1;min-width:96px;justify-content:center}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="alert info mb-2" id="aviso"></div>
+
+        <div class="section-title">Reportes de inventario</div>
+        <div class="rep-grid" id="repGrid"></div>
+
+        <div class="section-title mt-3">Otros reportes</div>
+        <div class="rep-grid">
+          <div class="card card-pad rep">
+            <div class="rep-top">
+              <div class="rep-ic" id="icPrest"></div>
+              <div><h3>Historial de préstamos</h3><div class="rep-desc">Listado completo de entregas, devoluciones y préstamos vencidos.</div></div>
+            </div>
+            <div class="rep-actions">
+              <button class="btn btn-ghost" data-dl="/reportes/prestamos?formato=pdf" data-name="historial_prestamos.pdf" id="prestPdf"></button>
+              <button class="btn btn-ghost" data-dl="/reportes/prestamos?formato=excel" data-name="historial_prestamos.xlsx" id="prestXls"></button>
+            </div>
+          </div>
+          <div class="card card-pad rep">
+            <div class="rep-top">
+              <div class="rep-ic" id="icTag"></div>
+              <div><h3>Etiquetas QR</h3><div class="rep-desc">Genera hojas de etiquetas con código QR para pegar en cada equipo.</div></div>
+            </div>
+            <div class="rep-actions">
+              <button class="btn btn-primary btn-block" onclick="location.href='etiquetas.html'" id="goTag"></button>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/ui.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/app.js"></script>
+  <script>
+    Shell.init({ active: 'reportes', title: 'Reportes' });
+
+    document.getElementById('aviso').innerHTML = ICON.info +
+      '<span><b>PDF A4</b>: tabla detallada, ideal para imprimir y archivar. &nbsp;<b>PDF A3</b>: formato visual con foto y QR grande, ideal para carteleras. &nbsp;<b>Excel</b>: datos editables y filtrables.</span>';
+    document.getElementById('icPrest').innerHTML = ICON.handshake;
+    document.getElementById('icTag').innerHTML = ICON.qr;
+    document.getElementById('prestPdf').innerHTML = ICON.pdf + '<span>PDF</span>';
+    document.getElementById('prestXls').innerHTML = ICON.excel + '<span>Excel</span>';
+    document.getElementById('goTag').innerHTML = ICON.tag + '<span>Ir a etiquetas</span>';
+
+    async function descargar(path, name){
+      try { UI.toast('Generando archivo…', 'info', 1500); await Api.download(path, name); }
+      catch (e) { UI.toast(e.message, 'err'); }
+    }
+
+    // Botones de descarga simples (data-dl)
+    document.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => descargar(b.dataset.dl, b.dataset.name));
+
+    // ---- Tarjetas de reporte de inventario ----
+    const BLOQUES = [
+      { tipo:'general', icon:'box', titulo:'Inventario general', desc:'Todos los activos registrados en el sistema.', selector:null },
+      { tipo:'taller', icon:'wrench', titulo:'Por taller', desc:'Activos pertenecientes a un taller específico.', selector:'taller' },
+      { tipo:'categoria', icon:'dashboard', titulo:'Por categoría', desc:'Activos agrupados por categoría.', selector:'categoria' },
+      { tipo:'estado', icon:'info', titulo:'Por estado', desc:'Operativos, en mantenimiento o dados de baja.', selector:'estado' },
+      { tipo:'responsable', icon:'users', titulo:'Por responsable', desc:'Activos a cargo de una persona.', selector:'responsable' },
+      { tipo:'mantenimiento', icon:'report', titulo:'Activos en mantenimiento', desc:'Listado de equipos actualmente en mantenimiento.', selector:null }
+    ];
+
+    function cardHTML(b){
+      let sel = '';
+      if (b.selector === 'taller') sel = `<select class="rep-sel" id="sel_${b.tipo}"><option value="">Selecciona un taller…</option></select>`;
+      else if (b.selector === 'categoria') sel = `<select class="rep-sel" id="sel_${b.tipo}"><option value="">Selecciona una categoría…</option></select>`;
+      else if (b.selector === 'estado') sel = `<select class="rep-sel" id="sel_${b.tipo}"><option value="">Selecciona un estado…</option><option value="operativo">Operativo</option><option value="mantenimiento">En mantenimiento</option><option value="baja">Dado de baja</option></select>`;
+      else if (b.selector === 'responsable') sel = `<input class="rep-sel" id="sel_${b.tipo}" type="text" placeholder="Nombre del responsable…">`;
+      return `
+        <div class="card card-pad rep">
+          <div class="rep-top">
+            <div class="rep-ic">${ICON[b.icon]}</div>
+            <div><h3>${b.titulo}</h3><div class="rep-desc">${b.desc}</div></div>
+          </div>
+          ${sel ? `<div class="field" style="margin:0">${sel}</div>` : ''}
+          <div class="rep-actions">
+            <button class="btn btn-ghost" onclick="repDescarga('${b.tipo}','${b.selector || ''}','A4')">${ICON.pdf}<span>PDF A4</span></button>
+            <button class="btn btn-ghost" onclick="repDescarga('${b.tipo}','${b.selector || ''}','A3')">${ICON.pdf}<span>PDF A3</span></button>
+            <button class="btn btn-ghost" onclick="repDescarga('${b.tipo}','${b.selector || ''}','excel')">${ICON.excel}<span>Excel</span></button>
+          </div>
+        </div>`;
+    }
+
+    document.getElementById('repGrid').innerHTML = BLOQUES.map(cardHTML).join('');
+
+    // Cargar selects de taller y categoría
+    (async () => {
+      try {
+        const [tals, cats] = await Promise.all([Api.get('/talleres'), Api.get('/categorias')]);
+        const st = document.getElementById('sel_taller');
+        const sc = document.getElementById('sel_categoria');
+        if (st) st.insertAdjacentHTML('beforeend', tals.map(t => `<option value="${t.id}">${UI.esc(t.nombre)}</option>`).join(''));
+        if (sc) sc.insertAdjacentHTML('beforeend', cats.map(c => `<option value="${c.id}">${UI.esc(c.nombre)}</option>`).join(''));
+      } catch (e) {}
+    })();
+
+    function repDescarga(tipo, selector, formato){
+      let extra = '';
+      if (selector) {
+        const el = document.getElementById('sel_' + tipo);
+        const val = (el.value || '').trim();
+        if (!val) { UI.toast('Primero elige una opción en este reporte.', 'warn'); return; }
+        if (selector === 'taller' || selector === 'categoria') extra = '&id=' + encodeURIComponent(val);
+        else extra = '&valor=' + encodeURIComponent(val);
+      }
+      const base = formato === 'excel' ? '/reportes/excel?tipo=' + tipo : '/reportes/pdf?tipo=' + tipo + '&formato=' + formato;
+      const ext = formato === 'excel' ? 'xlsx' : 'pdf';
+      const sufijo = formato === 'excel' ? '' : '_' + formato;
+      descargar(base + extra, `reporte_${tipo}${sufijo}.${ext}`);
+    }
+    window.repDescarga = repDescarga;
+  </script>
+</body>
+</html>

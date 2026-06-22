@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Etiquetas QR · Talleres</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <style>
+    .lbl-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line-2);cursor:pointer}
+    .lbl-row:last-child{border-bottom:none}
+    .lbl-row:hover{background:var(--bg-2)}
+    .lbl-row input{width:18px;height:18px;flex-shrink:0;accent-color:var(--color-primary);cursor:pointer}
+    .lbl-row .li-name{font-weight:600;font-size:14px}
+    .lbl-row .li-code{font-family:'Space Mono',monospace;font-size:12px;color:var(--muted)}
+    .lbl-foot{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);
+      padding:14px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-radius:0 0 var(--radius) var(--radius)}
+    .size-card{display:flex;gap:10px;flex-wrap:wrap}
+    .size-opt{border:1.5px solid var(--line);border-radius:10px;padding:10px 16px;cursor:pointer;flex:1;min-width:120px;text-align:center}
+    .size-opt.active{border-color:var(--color-primary);background:var(--color-primary-soft)}
+    .size-opt .so-t{font-weight:600;font-size:14px}
+    .size-opt .so-d{font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="card card-pad mb-2">
+          <div class="section-title">Tamaño de etiqueta</div>
+          <div class="size-card" id="sizeCard">
+            <div class="size-opt" data-size="pequeno"><div class="so-t">Pequeña</div><div class="so-d">Más por hoja</div></div>
+            <div class="size-opt active" data-size="mediano"><div class="so-t">Mediana</div><div class="so-d">Equilibrada</div></div>
+            <div class="size-opt" data-size="grande"><div class="so-t">Grande</div><div class="so-d">QR destacado</div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Selecciona los activos</h3>
+            <div class="spacer"></div>
+            <div class="search" style="max-width:280px">
+              <span id="searchIcon"></span>
+              <input type="search" id="q" placeholder="Buscar activo…">
+            </div>
+          </div>
+          <div style="padding:10px 16px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:10px">
+            <input type="checkbox" id="selPage" style="width:18px;height:18px;accent-color:var(--color-primary)">
+            <label for="selPage" class="small" style="cursor:pointer;color:var(--ink-2);font-weight:600">Seleccionar los de esta página</label>
+          </div>
+          <div id="lista"></div>
+          <div class="pager" id="pager" style="display:none;padding:12px 16px">
+            <div class="info" id="pagerInfo"></div>
+            <div class="controls">
+              <button class="btn btn-ghost btn-sm" id="prev">Anterior</button>
+              <span class="small muted" id="pagNum"></span>
+              <button class="btn btn-ghost btn-sm" id="next">Siguiente</button>
+            </div>
+          </div>
+          <div class="lbl-foot">
+            <span class="small" id="contador" style="font-weight:600">0 activos seleccionados</span>
+            <button class="btn btn-ghost btn-sm" id="limpiar" style="display:none">Limpiar selección</button>
+            <div class="spacer" style="flex:1"></div>
+            <button class="btn btn-ghost" id="btnTodo"></button>
+            <button class="btn btn-primary" id="btnSel"></button>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/ui.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/app.js"></script>
+  <script>
+    Shell.init({ active: 'etiquetas', title: 'Etiquetas QR' });
+
+    document.getElementById('searchIcon').outerHTML = `<span>${ICON.search}</span>`;
+    document.getElementById('btnTodo').innerHTML = ICON.tag + '<span>Todo el inventario</span>';
+    document.getElementById('btnSel').innerHTML = ICON.download + '<span>Descargar selección</span>';
+
+    let tamanio = 'mediano';
+    document.querySelectorAll('#sizeCard .size-opt').forEach(o => o.onclick = () => {
+      document.querySelectorAll('#sizeCard .size-opt').forEach(x => x.classList.remove('active'));
+      o.classList.add('active'); tamanio = o.dataset.size;
+    });
+
+    const seleccion = new Map(); // id -> {codigo, nombre}
+    let page = 1, totalPaginas = 1, pageRows = [], debounce;
+
+    document.getElementById('q').addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => { page = 1; cargar(); }, 350); });
+    document.getElementById('prev').onclick = () => { if (page > 1) { page--; cargar(); } };
+    document.getElementById('next').onclick = () => { if (page < totalPaginas) { page++; cargar(); } };
+    document.getElementById('selPage').onchange = (e) => {
+      pageRows.forEach(a => { if (e.target.checked) seleccion.set(a.id, a); else seleccion.delete(a.id); });
+      render(pageRows); actualizarContador();
+    };
+    document.getElementById('limpiar').onclick = () => { seleccion.clear(); render(pageRows); actualizarContador(); };
+    document.getElementById('btnSel').onclick = () => descargar([...seleccion.keys()]);
+    document.getElementById('btnTodo').onclick = () => descargar([]);
+
+    function params(){
+      const p = new URLSearchParams();
+      const q = document.getElementById('q').value.trim();
+      if (q) p.set('q', q);
+      p.set('page', page); p.set('limit', 30);
+      return p.toString();
+    }
+
+    async function cargar(){
+      const cont = document.getElementById('lista');
+      let sk = '';
+      for (let i = 0; i < 7; i++) sk += `<div class="lbl-row"><div class="skel" style="width:18px;height:18px;border-radius:4px"></div><div style="flex:1"><div class="skel" style="height:13px;width:60%;margin-bottom:7px"></div><div class="skel" style="height:11px;width:30%"></div></div></div>`;
+      cont.innerHTML = sk;
+      try {
+        const r = await Api.get('/activos?' + params());
+        totalPaginas = r.paginacion.totalPaginas || 1;
+        pageRows = r.data || [];
+        if (!pageRows.length) { cont.innerHTML = `<div class="empty">${ICON.empty}<h3>Sin activos</h3><p>No hay activos que coincidan con la búsqueda.</p></div>`; document.getElementById('pager').style.display = 'none'; return; }
+        render(pageRows);
+        actualizarPager(r.paginacion);
+      } catch (e) {
+        cont.innerHTML = `<div class="empty">${ICON.alert}<h3>No se pudo cargar</h3><p>${UI.esc(e.message)}</p></div>`;
+      }
+    }
+
+    function render(rows){
+      const cont = document.getElementById('lista');
+      cont.innerHTML = rows.map(a => `
+        <label class="lbl-row">
+          <input type="checkbox" data-id="${a.id}" ${seleccion.has(a.id) ? 'checked' : ''}>
+          <div style="flex:1;min-width:0">
+            <div class="li-name">${UI.esc(a.nombre)}</div>
+            <div class="li-code">${UI.esc(a.codigo_interno)}</div>
+          </div>
+          ${UI.badge(a.estado)}
+        </label>`).join('');
+      cont.querySelectorAll('input[type=checkbox]').forEach(chk => chk.onchange = () => {
+        const id = Number(chk.dataset.id);
+        const a = rows.find(x => x.id === id);
+        if (chk.checked) seleccion.set(id, a); else seleccion.delete(id);
+        actualizarContador(); sincronizarSelPage();
+      });
+      sincronizarSelPage();
+    }
+
+    function sincronizarSelPage(){
+      const all = pageRows.length && pageRows.every(a => seleccion.has(a.id));
+      document.getElementById('selPage').checked = all;
+    }
+
+    function actualizarContador(){
+      const n = seleccion.size;
+      document.getElementById('contador').textContent = n === 1 ? '1 activo seleccionado' : `${n} activos seleccionados`;
+      document.getElementById('limpiar').style.display = n ? '' : 'none';
+    }
+
+    function actualizarPager(p){
+      const pager = document.getElementById('pager');
+      pager.style.display = p.totalPaginas > 1 ? 'flex' : 'none';
+      const desde = (p.page - 1) * p.limit + 1;
+      const hasta = Math.min(p.page * p.limit, p.total);
+      document.getElementById('pagerInfo').textContent = `Mostrando ${desde}–${hasta} de ${p.total}`;
+      document.getElementById('pagNum').textContent = `Página ${p.page} de ${p.totalPaginas}`;
+      document.getElementById('prev').disabled = p.page <= 1;
+      document.getElementById('next').disabled = p.page >= p.totalPaginas;
+    }
+
+    async function descargar(ids){
+      let path = '/reportes/etiquetas?tamanio=' + tamanio;
+      let name = 'etiquetas_' + tamanio + '.pdf';
+      if (ids.length) path += '&ids=' + ids.join(',');
+      else {
+        const ok = await UI.confirm('Se generarán etiquetas para todo el inventario (hasta 200 activos). ¿Continuar?', { titulo: 'Generar todas las etiquetas', ok: 'Generar' });
+        if (!ok) return;
+      }
+      try { UI.toast('Generando etiquetas…', 'info', 1500); await Api.download(path, name); }
+      catch (e) { UI.toast(e.message, 'err'); }
+    }
+
+    // Si se pulsa "Descargar selección" sin nada marcado
+    document.getElementById('btnSel').onclick = () => {
+      if (seleccion.size === 0) { UI.toast('No has seleccionado ningún activo.', 'warn'); return; }
+      descargar([...seleccion.keys()]);
+    };
+
+    actualizarContador();
+    cargar();
+  </script>
+</body>
+</html>
