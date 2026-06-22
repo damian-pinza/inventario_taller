@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel · Inventario de Talleres</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+        <div id="alertas"></div>
+
+        <div class="kpi-grid" id="kpis">
+          <div class="kpi"><div class="k-label">Total de activos</div><div class="k-value"><div class="skel" style="height:34px;width:60px"></div></div></div>
+          <div class="kpi op"><div class="k-label">Operativos</div><div class="k-value"><div class="skel" style="height:34px;width:60px"></div></div></div>
+          <div class="kpi mant"><div class="k-label">En mantenimiento</div><div class="k-value"><div class="skel" style="height:34px;width:60px"></div></div></div>
+          <div class="kpi baja"><div class="k-label">Dados de baja</div><div class="k-value"><div class="skel" style="height:34px;width:60px"></div></div></div>
+        </div>
+
+        <div class="dash-grid mb-2">
+          <div class="panel">
+            <div class="panel-head"><h3>Activos por taller</h3></div>
+            <div class="card-pad"><div class="chart-box"><canvas id="chartTaller"></canvas></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3>Distribución por estado</h3></div>
+            <div class="card-pad"><div class="chart-box"><canvas id="chartEstado"></canvas></div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Actividad reciente</h3>
+            <div class="spacer"></div>
+            <a href="inventario.html" class="btn btn-ghost btn-sm">Ver inventario</a>
+          </div>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>Código</th><th>Activo</th><th>Categoría</th><th>Taller</th><th>Estado</th><th class="nowrap">Modificado</th></tr></thead>
+              <tbody id="recientes"></tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="../config.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/ui.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/app.js"></script>
+  <script>
+    Shell.init({ active: 'dashboard', title: 'Panel general' });
+
+    (async () => {
+      try {
+        const d = await Api.get('/dashboard/estadisticas');
+        pintarKPIs(d.totales);
+        pintarAlertas(d.alertas);
+        pintarRecientes(d.ultimos);
+        graficoTaller(d.porTaller);
+        graficoEstado(d.totales);
+      } catch (e) {
+        UI.toast(e.message || 'No se pudieron cargar las estadísticas.', 'err');
+      }
+    })();
+
+    function pintarKPIs(t) {
+      document.getElementById('kpis').innerHTML = `
+        <div class="kpi"><div class="k-label">Total de activos</div><div class="k-value">${t.total}</div><div class="k-foot">registros en el sistema</div></div>
+        <div class="kpi op"><div class="k-label">Operativos</div><div class="k-value">${t.operativos}</div><div class="k-foot">${pct(t.operativos, t.total)}% del total</div></div>
+        <div class="kpi mant"><div class="k-label">En mantenimiento</div><div class="k-value">${t.mantenimiento}</div><div class="k-foot">${pct(t.mantenimiento, t.total)}% del total</div></div>
+        <div class="kpi baja"><div class="k-label">Dados de baja</div><div class="k-value">${t.baja}</div><div class="k-foot">${pct(t.baja, t.total)}% del total</div></div>`;
+    }
+    function pct(n, total) { return total ? Math.round((n / total) * 100) : 0; }
+
+    function pintarAlertas(a) {
+      const box = document.getElementById('alertas');
+      const items = [];
+      if (a.prestamos_vencidos > 0) items.push(`<div class="alert warn" style="margin-bottom:12px">${ICON.handshake}<div><b>${a.prestamos_vencidos} préstamo(s) vencido(s).</b> Hay equipos que debían devolverse y siguen prestados. <a href="prestamos.html?estado=vencido">Revisar</a></div></div>`);
+      if (a.mantenimientos_proximos > 0) items.push(`<div class="alert info" style="margin-bottom:12px">${ICON.wrench}<div><b>${a.mantenimientos_proximos} mantenimiento(s) próximo(s).</b> Se acercan fechas de mantenimiento programado. <a href="mantenimiento.html">Ver</a></div></div>`);
+      box.innerHTML = items.join('');
+    }
+
+    function pintarRecientes(rows) {
+      const tb = document.getElementById('recientes');
+      if (!rows || !rows.length) { tb.innerHTML = `<tr><td colspan="6" class="text-c muted" style="padding:30px">Aún no hay activos registrados.</td></tr>`; return; }
+      tb.innerHTML = rows.map((r) => `
+        <tr style="cursor:pointer" onclick="location.href='activo-detalle.html?id=${r.id}'">
+          <td><span class="code-chip">${UI.esc(r.codigo_interno)}</span></td>
+          <td class="t-strong">${UI.esc(r.nombre)}</td>
+          <td>${UI.esc(r.categoria_nombre || '—')}</td>
+          <td>${UI.esc(r.taller_nombre || '—')}</td>
+          <td>${UI.badge(r.estado)}</td>
+          <td class="t-sub nowrap">${UI.datetime(r.modificado_en)}</td>
+        </tr>`).join('');
+    }
+
+    const cssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+    function graficoTaller(data) {
+      if (!data || !data.length) return;
+      new Chart(document.getElementById('chartTaller'), {
+        type: 'bar',
+        data: {
+          labels: data.map((d) => d.nombre),
+          datasets: [{ label: 'Activos', data: data.map((d) => d.total), backgroundColor: cssVar('--color-primary'), borderRadius: 6, maxBarThickness: 38 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false }, ticks: { font: { family: 'Inter' } } },
+            y: { beginAtZero: true, ticks: { precision: 0, font: { family: 'Inter' } }, grid: { color: '#eef2f7' } }
+          }
+        }
+      });
+    }
+
+    function graficoEstado(t) {
+      new Chart(document.getElementById('chartEstado'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Operativos', 'En mantenimiento', 'Dados de baja'],
+          datasets: [{ data: [t.operativos, t.mantenimiento, t.baja], backgroundColor: ['#15803d', '#d97706', '#b91c1c'], borderWidth: 2, borderColor: '#fff' }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '62%',
+          plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter' }, padding: 16, usePointStyle: true } } }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
