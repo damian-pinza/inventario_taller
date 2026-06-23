@@ -24,6 +24,15 @@
     .qr-display { text-align: center; }
     .qr-display img { width: 180px; height: 180px; border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: #fff; }
     @media (max-width: 920px) { .form-cols { grid-template-columns: 1fr; } }
+    /* --- Panel de unidades múltiples (creación en lote) --- */
+    .units-banner { display: flex; gap: 11px; padding: 13px 15px; border-radius: 10px; background: var(--color-primary-soft); border: 1px solid #bcd4fb; color: var(--color-primary-d); font-size: 13.5px; align-items: flex-start; margin-bottom: 14px; }
+    .units-banner svg { width: 19px; height: 19px; flex-shrink: 0; margin-top: 1px; }
+    .unit-row { display: grid; grid-template-columns: 80px 1fr 1fr 150px; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: var(--bg-2); align-items: center; }
+    .unit-row .unit-tag { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; color: var(--muted); text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 0; }
+    .unit-row .unit-tag.primary { color: var(--color-primary-d); border-color: #bcd4fb; background: var(--color-primary-soft); }
+    .unit-row input, .unit-row select { padding: 7px 9px; font-size: 13.5px; }
+    .unit-row .unit-readonly { font-size: 13px; color: var(--ink-2); padding: 7px 9px; background: var(--surface); border: 1px dashed var(--line); border-radius: 7px; font-style: italic; }
+    @media (max-width: 720px) { .unit-row { grid-template-columns: 1fr; gap: 6px; } }
   </style>
 </head>
 <body>
@@ -61,6 +70,13 @@
                 <div class="field"><label>Valor referencial (USD)</label><input id="valor_referencial" type="number" min="0" step="0.01" placeholder="0.00"></div>
                 <div class="field col-2"><label>Observaciones</label><textarea id="observaciones" placeholder="Notas adicionales sobre el activo…"></textarea></div>
                 <div class="field col-2"><label>Cuidados / mantenimiento recomendado</label><textarea id="cuidado_mantenimiento" placeholder="Indicaciones de uso y cuidado (se muestran en la ficha pública del QR)…"></textarea></div>
+              </div>
+
+              <!-- Panel de unidades múltiples (solo en creación con cantidad > 1) -->
+              <div id="unidadesPanel" style="display:none;margin-top:10px">
+                <div class="units-banner" id="unidadesBanner"></div>
+                <div id="unidadesLista"></div>
+                <div class="hint small muted" style="margin-top:6px">Marca, modelo, categoría, taller y demás datos se aplican igual a todas las unidades.</div>
               </div>
               <div class="row" style="justify-content:flex-end;gap:10px;margin-top:8px">
                 <button class="btn btn-ghost" onclick="volver()">Cancelar</button>
@@ -152,17 +168,110 @@
       } catch (e) { UI.toast(e.message, 'err'); }
     }
 
+    // ---------- Unidades múltiples (solo creación) ----------
+    function renderUnidades() {
+      if (editando) return; // en edición no aplica
+      const n = parseInt(document.getElementById('cantidad').value, 10) || 1;
+      const panel = document.getElementById('unidadesPanel');
+      const lista = document.getElementById('unidadesLista');
+      const banner = document.getElementById('unidadesBanner');
+
+      if (n < 2) { panel.style.display = 'none'; lista.innerHTML = ''; return; }
+
+      banner.innerHTML = ICON.info + `<span>Vas a registrar <b>${n} unidades</b>. La <b>unidad 1</b> usa el código, número de serie y estado del formulario de arriba. Completa abajo los datos individuales de las otras ${n - 1} unidad${n - 1 === 1 ? '' : 'es'}.</span>`;
+
+      // Conservar lo ya escrito si solo cambió el número
+      const prev = {};
+      lista.querySelectorAll('.unit-row[data-idx]').forEach(row => {
+        const idx = row.dataset.idx;
+        prev[idx] = {
+          codigo: row.querySelector('.u-codigo').value,
+          serie: row.querySelector('.u-serie').value,
+          estado: row.querySelector('.u-estado').value
+        };
+      });
+
+      let html = `
+        <div class="unit-row">
+          <div class="unit-tag primary">Unidad 1</div>
+          <div class="unit-readonly" id="u1Codigo">(código de arriba)</div>
+          <div class="unit-readonly" id="u1Serie">(serie de arriba)</div>
+          <div class="unit-readonly" id="u1Estado">(estado de arriba)</div>
+        </div>`;
+      for (let i = 2; i <= n; i++) {
+        const p = prev[i] || {};
+        html += `
+          <div class="unit-row" data-idx="${i}">
+            <div class="unit-tag">Unidad ${i}</div>
+            <input class="u-codigo" placeholder="Código interno *" value="${UI.esc(p.codigo || '')}">
+            <input class="u-serie" placeholder="Número de serie" value="${UI.esc(p.serie || '')}">
+            <select class="u-estado">
+              <option value="operativo" ${(!p.estado || p.estado === 'operativo') ? 'selected' : ''}>Operativo</option>
+              <option value="mantenimiento" ${p.estado === 'mantenimiento' ? 'selected' : ''}>En mantenimiento</option>
+              <option value="baja" ${p.estado === 'baja' ? 'selected' : ''}>Dado de baja</option>
+            </select>
+          </div>`;
+      }
+      lista.innerHTML = html;
+      panel.style.display = '';
+      reflejarUnidad1();
+    }
+
+    function reflejarUnidad1() {
+      const u1c = document.getElementById('u1Codigo');
+      if (!u1c) return;
+      u1c.textContent = document.getElementById('codigo_interno').value.trim() || '(código de arriba)';
+      document.getElementById('u1Serie').textContent = document.getElementById('numero_serie').value.trim() || '(sin serie)';
+      const est = document.getElementById('estado').value;
+      const lbl = { operativo: 'Operativo', mantenimiento: 'En mantenimiento', baja: 'Dado de baja' }[est] || est;
+      document.getElementById('u1Estado').textContent = lbl;
+    }
+
+    document.getElementById('cantidad').addEventListener('input', renderUnidades);
+    ['codigo_interno', 'numero_serie', 'estado'].forEach(idc => {
+      document.getElementById(idc).addEventListener('input', reflejarUnidad1);
+      document.getElementById(idc).addEventListener('change', reflejarUnidad1);
+    });
+
     // ---------- Guardar ----------
     document.getElementById('btnGuardar').onclick = async () => {
       const datos = {};
       CAMPOS.forEach((c) => { const v = document.getElementById(c).value; datos[c] = v === '' ? null : v; });
       if (!datos.codigo_interno || !datos.nombre) { UI.toast('Código interno y nombre son obligatorios.', 'err'); return; }
+
+      // ¿Creación múltiple?
+      const cant = parseInt(datos.cantidad, 10) || 1;
+      const usarLote = !editando && cant >= 2 && document.getElementById('unidadesPanel').style.display !== 'none';
+
       const btn = document.getElementById('btnGuardar'); btn.disabled = true; btn.textContent = 'Guardando…';
       try {
         if (editando) {
           await Api.put('/activos/' + id, datos);
           UI.toast('Activo actualizado.', 'ok');
           setTimeout(() => location.href = 'activo-detalle.html?id=' + id, 600);
+        } else if (usarLote) {
+          // Armar array de unidades: la 1 son los datos generales; las demás vienen del panel.
+          const unidades = [{
+            codigo_interno: datos.codigo_interno,
+            numero_serie: datos.numero_serie,
+            estado: datos.estado || 'operativo'
+          }];
+          const filas = document.querySelectorAll('#unidadesLista .unit-row[data-idx]');
+          for (const row of filas) {
+            const cod = row.querySelector('.u-codigo').value.trim();
+            if (!cod) { UI.toast(`Falta el código interno de la unidad ${row.dataset.idx}.`, 'err'); btn.disabled = false; btn.textContent = 'Guardar activo'; return; }
+            unidades.push({
+              codigo_interno: cod,
+              numero_serie: row.querySelector('.u-serie').value.trim() || null,
+              estado: row.querySelector('.u-estado').value
+            });
+          }
+          // Limpiar el body: enviar comunes + unidades
+          const body = { ...datos, unidades };
+          delete body.codigo_interno; delete body.numero_serie; delete body.estado; delete body.cantidad;
+          const res = await Api.post('/activos', body);
+          UI.toast(`${res.creadas} activos creados correctamente.`, 'ok');
+          setTimeout(() => location.href = 'inventario.html', 800);
         } else {
           const nuevo = await Api.post('/activos', datos);
           UI.toast('Activo creado. Ahora puedes añadir fotos.', 'ok');

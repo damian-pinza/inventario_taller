@@ -101,6 +101,88 @@ exports.detalle = asyncHandler(async (req, res) => {
 
 // POST /api/activos — crear
 exports.crear = asyncHandler(async (req, res) => {
+  // --- Modo LOTE: el body trae un array "unidades" con datos individuales por equipo ---
+  if (Array.isArray(req.body.unidades) && req.body.unidades.length > 0) {
+    const unidades = req.body.unidades;
+
+    // Datos comunes (excluye los individuales)
+    const comunes = limpiarActivo(req.body);
+    delete comunes.codigo_interno;
+    delete comunes.numero_serie;
+    delete comunes.estado;
+    delete comunes.cantidad;
+
+    if (!comunes.nombre) {
+      return res.status(400).json({ error: 'El nombre es obligatorio.' });
+    }
+
+    // Validación previa de cada unidad
+    const codigosVistos = new Set();
+    for (let i = 0; i < unidades.length; i++) {
+      const u = unidades[i];
+      if (!u || !u.codigo_interno || String(u.codigo_interno).trim() === '') {
+        return res.status(400).json({ error: `Falta el código interno de la unidad ${i + 1}.` });
+      }
+      const cod = String(u.codigo_interno).trim().toLowerCase();
+      if (codigosVistos.has(cod)) {
+        return res.status(400).json({ error: `Código interno duplicado en el formulario: "${u.codigo_interno}".` });
+      }
+      codigosVistos.add(cod);
+      if (u.estado && !ESTADOS.includes(u.estado)) {
+        return res.status(400).json({ error: `Estado inválido en la unidad ${i + 1}.` });
+      }
+    }
+
+    const conn = await pool.getConnection();
+    const creados = [];
+    try {
+      await conn.beginTransaction();
+      for (const u of unidades) {
+        const datos = {
+          ...comunes,
+          codigo_interno: String(u.codigo_interno).trim(),
+          numero_serie: u.numero_serie ? String(u.numero_serie).trim() : null,
+          estado: u.estado || 'operativo',
+          cantidad: 1
+        };
+        const qr_token = generarToken();
+        const cols = [...Object.keys(datos), 'qr_token', 'creado_por', 'modificado_por'];
+        const vals = [...Object.values(datos), qr_token, req.user.id, req.user.id];
+        const placeholders = cols.map(() => '?').join(',');
+        const [r] = await conn.query(`INSERT INTO activos (${cols.join(',')}) VALUES (${placeholders})`, vals);
+        creados.push({ id: r.insertId, codigo_interno: datos.codigo_interno, qr_token });
+      }
+      await conn.commit();
+    } catch (e) {
+      await conn.rollback();
+      if (e.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ error: 'Uno de los códigos internos ya existe en el sistema. No se creó ningún registro.' });
+      }
+      throw e;
+    } finally {
+      conn.release();
+    }
+
+    await registrarAuditoria({
+      usuarioId: req.user.id, accion: 'crear_lote', tabla: 'activos',
+      detalle: `${creados.length} unidades: ${creados.map(c => c.codigo_interno).join(', ')}`, ip: req.ip
+    });
+
+    // Recuperar el primer activo completo para devolverlo (compatibilidad con flujo existente)
+    const [rows] = await pool.query('SELECT * FROM activos WHERE id = ?', [creados[0].id]);
+    const primero = rows[0];
+    primero.qr_data_url = await qrDataURL(creados[0].qr_token);
+
+    return res.status(201).json({
+      modo: 'lote',
+      creadas: creados.length,
+      ids: creados.map(c => c.id),
+      codigos: creados.map(c => c.codigo_interno),
+      primero
+    });
+  }
+
+  // --- Modo CLÁSICO: un solo activo (comportamiento original) ---
   const datos = limpiarActivo(req.body);
   if (!datos.codigo_interno || !datos.nombre) {
     return res.status(400).json({ error: 'Código interno y nombre son obligatorios.' });
