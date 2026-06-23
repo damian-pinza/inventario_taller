@@ -6,7 +6,7 @@
 
 // Ejemplo en producción:
 //   const API_BASE_URL = 'https://tu-backend.up.railway.app/api';
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = 'https://inventariotaller-production.up.railway.app/api';
 
 // Tiempo de inactividad antes de cerrar sesión automáticamente (minutos)
 const INACTIVIDAD_MIN = 60;
