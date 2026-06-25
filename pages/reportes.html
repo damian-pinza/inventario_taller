@@ -57,6 +57,59 @@
           </div>
         </div>
 
+        <div class="section-title mt-3">Actas de entrega-recepción</div>
+        <div class="alert info mb-2" id="avisoActa"></div>
+        <div class="card card-pad mb-2" style="max-width:760px">
+          <div class="form-grid">
+            <div class="field">
+              <label>Entregado por (opcional)</label>
+              <input type="text" id="actaEntrega" placeholder="Por defecto: responsable del área / inventario">
+            </div>
+            <div class="field">
+              <label>Recibido por (opcional)</label>
+              <input type="text" id="actaRecibe" placeholder="Nombre de quien recibe">
+            </div>
+          </div>
+          <div class="hint small muted">Si dejas un campo vacío, en el acta aparecerá una línea para firmar/rellenar a mano. Coordinador y Rector se toman de Configuración.</div>
+        </div>
+
+        <div class="rep-grid">
+          <div class="card card-pad rep">
+            <div class="rep-top">
+              <div class="rep-ic" id="icActaArea"></div>
+              <div><h3>Acta por área / taller</h3><div class="rep-desc">Entrega de todas las herramientas de un taller a su responsable.</div></div>
+            </div>
+            <div class="field" style="margin:0"><select id="actaTaller"><option value="">Selecciona un taller…</option></select></div>
+            <div class="rep-actions">
+              <button class="btn btn-primary btn-block" onclick="repActa('area', document.getElementById('actaTaller').value)" id="btnActaArea"></button>
+            </div>
+          </div>
+
+          <div class="card card-pad rep">
+            <div class="rep-top">
+              <div class="rep-ic" id="icActaGen"></div>
+              <div><h3>Acta del inventario general</h3><div class="rep-desc">Entrega-recepción de todo el inventario registrado.</div></div>
+            </div>
+            <div class="rep-actions">
+              <button class="btn btn-primary btn-block" onclick="repActa('general')" id="btnActaGen"></button>
+            </div>
+          </div>
+
+          <div class="card card-pad rep">
+            <div class="rep-top">
+              <div class="rep-ic" id="icActaHerr"></div>
+              <div><h3>Acta por herramienta</h3><div class="rep-desc">Entrega-recepción de un equipo específico.</div></div>
+            </div>
+            <div class="field" style="margin:0">
+              <input type="search" id="actaHerrFiltro" placeholder="Filtrar por código o nombre…" style="margin-bottom:6px">
+              <select id="actaHerr"><option value="">Selecciona una herramienta…</option></select>
+            </div>
+            <div class="rep-actions">
+              <button class="btn btn-primary btn-block" onclick="repActa('herramienta', document.getElementById('actaHerr').value)" id="btnActaHerr"></button>
+            </div>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>
@@ -73,6 +126,14 @@
       '<span><b>PDF A4</b>: tabla detallada, ideal para imprimir y archivar. &nbsp;<b>PDF A3</b>: formato visual con foto y QR grande, ideal para carteleras. &nbsp;<b>Excel</b>: datos editables y filtrables.</span>';
     document.getElementById('icPrest').innerHTML = ICON.handshake;
     document.getElementById('icTag').innerHTML = ICON.qr;
+    document.getElementById('icActaArea').innerHTML = ICON.wrench;
+    document.getElementById('icActaGen').innerHTML = ICON.report;
+    document.getElementById('icActaHerr').innerHTML = ICON.box;
+    document.getElementById('btnActaArea').innerHTML = ICON.pdf + '<span>Generar acta</span>';
+    document.getElementById('btnActaGen').innerHTML = ICON.pdf + '<span>Generar acta</span>';
+    document.getElementById('btnActaHerr').innerHTML = ICON.pdf + '<span>Generar acta</span>';
+    document.getElementById('avisoActa').innerHTML = ICON.info +
+      '<span>El acta incluye el detalle de los ítems, las firmas de <b>entrega</b> y <b>recepción</b>, y las de <b>Coordinador</b> y <b>Rector</b>.</span>';
     document.getElementById('prestPdf').innerHTML = ICON.pdf + '<span>PDF</span>';
     document.getElementById('prestXls').innerHTML = ICON.excel + '<span>Excel</span>';
     document.getElementById('goTag').innerHTML = ICON.tag + '<span>Ir a etiquetas</span>';
@@ -126,8 +187,44 @@
         const sc = document.getElementById('sel_categoria');
         if (st) st.insertAdjacentHTML('beforeend', tals.map(t => `<option value="${t.id}">${UI.esc(t.nombre)}</option>`).join(''));
         if (sc) sc.insertAdjacentHTML('beforeend', cats.map(c => `<option value="${c.id}">${UI.esc(c.nombre)}</option>`).join(''));
+        // Acta por área
+        const sta = document.getElementById('actaTaller');
+        if (sta) sta.insertAdjacentHTML('beforeend', tals.map(t => `<option value="${t.id}">${UI.esc(t.nombre)}</option>`).join(''));
       } catch (e) {}
     })();
+
+    // Cargar herramientas para el acta por herramienta (con filtro en cliente)
+    let actaActivos = [];
+    (async () => {
+      try {
+        const r = await Api.get('/activos?limit=1000');
+        actaActivos = r.data || [];
+        pintarActaHerr('');
+      } catch (e) {}
+    })();
+    function pintarActaHerr(filtro){
+      const f = (filtro || '').trim().toLowerCase();
+      const lista = !f ? actaActivos : actaActivos.filter(a =>
+        (a.codigo_interno || '').toLowerCase().includes(f) || (a.nombre || '').toLowerCase().includes(f));
+      const sel = document.getElementById('actaHerr');
+      sel.innerHTML = '<option value="">Selecciona una herramienta…</option>' +
+        lista.slice(0, 300).map(a => `<option value="${a.id}">${UI.esc(a.codigo_interno)} — ${UI.esc(a.nombre)}</option>`).join('');
+    }
+    document.getElementById('actaHerrFiltro').addEventListener('input', (e) => pintarActaHerr(e.target.value));
+
+    function repActa(tipo, id){
+      if ((tipo === 'area' || tipo === 'herramienta') && !id) {
+        UI.toast(tipo === 'area' ? 'Selecciona un taller.' : 'Selecciona una herramienta.', 'warn'); return;
+      }
+      const entrega = document.getElementById('actaEntrega').value.trim();
+      const recibe = document.getElementById('actaRecibe').value.trim();
+      let path = '/reportes/acta?tipo=' + tipo;
+      if (id) path += '&id=' + encodeURIComponent(id);
+      if (entrega) path += '&entrega=' + encodeURIComponent(entrega);
+      if (recibe) path += '&recibe=' + encodeURIComponent(recibe);
+      descargar(path, `acta_${tipo}.pdf`);
+    }
+    window.repActa = repActa;
 
     function repDescarga(tipo, selector, formato){
       let extra = '';
