@@ -25,7 +25,11 @@ exports.get = asyncHandler(async (req, res) => {
 // PUT /api/config  (solo administrador)
 exports.update = asyncHandler(async (req, res) => {
   const config = await obtenerConfig();
-  const { nombre_institucion, nombre_administrador, nombre_sistema, color_primario, dias_alerta_mantenimiento, logo_svg } = req.body;
+  const {
+    nombre_institucion, nombre_administrador, nombre_sistema, color_primario,
+    dias_alerta_mantenimiento, logo_svg,
+    direccion, ciudad, telefono, coordinador_nombre, rector_nombre
+  } = req.body;
 
   await pool.query(
     `UPDATE configuracion SET
@@ -34,9 +38,16 @@ exports.update = asyncHandler(async (req, res) => {
        nombre_sistema = COALESCE(?, nombre_sistema),
        color_primario = COALESCE(?, color_primario),
        dias_alerta_mantenimiento = COALESCE(?, dias_alerta_mantenimiento),
-       logo_svg = COALESCE(?, logo_svg)
+       logo_svg = COALESCE(?, logo_svg),
+       direccion = COALESCE(?, direccion),
+       ciudad = COALESCE(?, ciudad),
+       telefono = COALESCE(?, telefono),
+       coordinador_nombre = COALESCE(?, coordinador_nombre),
+       rector_nombre = COALESCE(?, rector_nombre)
      WHERE id = ?`,
-    [nombre_institucion, nombre_administrador, nombre_sistema, color_primario, dias_alerta_mantenimiento, logo_svg, config.id]
+    [nombre_institucion, nombre_administrador, nombre_sistema, color_primario,
+     dias_alerta_mantenimiento, logo_svg,
+     direccion, ciudad, telefono, coordinador_nombre, rector_nombre, config.id]
   );
 
   await registrarAuditoria({ usuarioId: req.user.id, accion: 'actualizar', tabla: 'configuracion', registroId: config.id, ip: req.ip });
