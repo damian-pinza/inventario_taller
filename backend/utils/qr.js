@@ -31,4 +31,13 @@ async function qrBuffer(token, width = 300) {
   });
 }
 
-module.exports = { generarToken, urlPublica, qrDataURL, qrBuffer };
+// QR de una URL arbitraria (p. ej. el inventario digital en el encabezado del PDF).
+async function qrBufferURL(url, width = 300) {
+  return QRCode.toBuffer(String(url || ''), {
+    errorCorrectionLevel: 'M',
+    margin: 1,
+    width
+  });
+}
+
+module.exports = { generarToken, urlPublica, qrDataURL, qrBuffer, qrBufferURL };
