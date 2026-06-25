@@ -2,7 +2,7 @@
 const pool = require('../config/db');
 const { asyncHandler } = require('../middlewares/errorHandler');
 const { obtenerConfig } = require('./configController');
-const { generarReportePDF, generarEtiquetasPDF } = require('../utils/pdf');
+const { generarReportePDF, generarEtiquetasPDF, generarActaPDF } = require('../utils/pdf');
 const { generarReporteExcel } = require('../utils/excel');
 
 const TITULOS = {
@@ -13,6 +13,17 @@ const TITULOS = {
   responsable: 'Inventario por responsable',
   mantenimiento: 'Activos en mantenimiento'
 };
+
+// Columna que se oculta según el filtro aplicado (ya está implícita en el reporte).
+const OCULTAR_POR_TIPO = {
+  categoria: ['categoria_nombre'],
+  taller: ['taller_nombre'],
+  estado: ['estado']
+};
+
+function urlInventarioDigital() {
+  return (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+}
 
 // Construye la consulta de activos según el tipo de reporte.
 async function obtenerActivosReporte({ tipo, id, valor }) {
@@ -45,6 +56,28 @@ function tituloCompuesto(tipo, activos, id, valor) {
   return t;
 }
 
+// Nombre del docente responsable de un taller.
+async function responsableDeTaller(id) {
+  if (!id) return null;
+  const [rows] = await pool.query(
+    `SELECT t.nombre AS taller, u.nombre AS responsable
+     FROM talleres t LEFT JOIN usuarios u ON u.id = t.responsable_id WHERE t.id = ?`, [id]
+  );
+  return rows[0] || null;
+}
+
+// Arma el bloque de firmas según el alcance del reporte.
+function construirFirmas({ tipo, config, docenteNombre }) {
+  const primera = (tipo === 'taller')
+    ? { rol: 'Responsable del área (Docente)', nombre: docenteNombre || '' }
+    : { rol: 'Responsable del inventario', nombre: config?.nombre_administrador || '' };
+  return [
+    primera,
+    { rol: 'Coordinador', nombre: config?.coordinador_nombre || '' },
+    { rol: 'Rector', nombre: config?.rector_nombre || '' }
+  ];
+}
+
 // GET /api/reportes/pdf
 exports.pdf = asyncHandler(async (req, res) => {
   const { tipo = 'general', formato = 'A4', id, valor } = req.query;
@@ -52,15 +85,22 @@ exports.pdf = asyncHandler(async (req, res) => {
   const activos = await obtenerActivosReporte({ tipo, id, valor });
   const titulo = tituloCompuesto(tipo, activos, id, valor);
 
+  let docenteNombre = null;
+  if (tipo === 'taller' && id) { const t = await responsableDeTaller(id); docenteNombre = t?.responsable; }
+
   const buffer = await generarReportePDF({
-    config, titulo, generadoPor: req.user.nombre, activos, formato: formato.toUpperCase()
+    config, titulo, generadoPor: req.user.nombre, activos,
+    formato: formato.toUpperCase(),
+    ocultar: OCULTAR_POR_TIPO[tipo] || [],
+    firmas: construirFirmas({ tipo, config, docenteNombre }),
+    qrHeaderUrl: urlInventarioDigital()
   });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="reporte_${tipo}_${formato}.pdf"`);
   res.send(buffer);
 });
 
-// GET /api/reportes/excel
+// GET /api/reportes/excel  (sin cambios)
 exports.excel = asyncHandler(async (req, res) => {
   const { tipo = 'general', id, valor } = req.query;
   const config = await obtenerConfig();
@@ -71,6 +111,50 @@ exports.excel = asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="reporte_${tipo}.xlsx"`);
   res.send(Buffer.from(buffer));
+});
+
+// GET /api/reportes/acta?tipo=area|general|herramienta&id=&entrega=&recibe=
+exports.acta = asyncHandler(async (req, res) => {
+  const tipo = req.query.tipo || 'general';
+  const id = req.query.id;
+  const config = await obtenerConfig();
+  const qrHeaderUrl = urlInventarioDigital();
+
+  let activos = [];
+  let alcanceTitulo = 'Entrega del inventario general';
+  let entregaDefault = config?.nombre_administrador || '';
+
+  if (tipo === 'area') {
+    if (!id) return res.status(400).json({ error: 'Falta el id del taller/área.' });
+    activos = await obtenerActivosReporte({ tipo: 'taller', id });
+    const t = await responsableDeTaller(id);
+    alcanceTitulo = `Entrega del área: ${t?.taller || ''}`;
+    entregaDefault = t?.responsable || entregaDefault;
+  } else if (tipo === 'herramienta') {
+    if (!id) return res.status(400).json({ error: 'Falta el id de la herramienta.' });
+    const [rows] = await pool.query(
+      `SELECT a.*, c.nombre AS categoria_nombre, t.nombre AS taller_nombre
+       FROM activos a LEFT JOIN categorias c ON c.id = a.categoria_id
+       LEFT JOIN talleres t ON t.id = a.taller_id WHERE a.id = ?`, [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Herramienta no encontrada.' });
+    activos = rows;
+    alcanceTitulo = `Entrega de herramienta: ${rows[0].codigo_interno || ''} — ${rows[0].nombre || ''}`;
+    entregaDefault = rows[0].responsable || entregaDefault;
+  } else {
+    activos = await obtenerActivosReporte({ tipo: 'general' });
+    alcanceTitulo = 'Entrega del inventario general';
+  }
+
+  const entregaNombre = (req.query.entrega || entregaDefault || '').trim();
+  const recibeNombre = (req.query.recibe || '').trim();
+
+  const buffer = await generarActaPDF({
+    config, generadoPor: req.user.nombre, alcanceTitulo, activos, entregaNombre, recibeNombre, qrHeaderUrl
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="acta_${tipo}.pdf"`);
+  res.send(buffer);
 });
 
 // GET /api/reportes/etiquetas?ids=1,2,3&tamanio=mediano
@@ -131,16 +215,18 @@ exports.prestamos = asyncHandler(async (req, res) => {
     return res.send(Buffer.from(buffer));
   }
 
-  // PDF simple reutilizando el generador como "tabla" sobre datos de préstamo:
-  // mapeamos a la forma esperada para no duplicar el motor de tablas.
   const activos = rows.map((p) => ({
     codigo_interno: p.codigo_interno, nombre: p.activo_nombre,
     categoria_nombre: p.receptor_nombre, marca: p.receptor_cargo, modelo: '',
+    numero_serie: '',
     estado: p.estado === 'devuelto' ? 'operativo' : (p.estado === 'vencido' ? 'baja' : 'mantenimiento'),
     taller_nombre: p.fecha_entrega ? new Date(p.fecha_entrega).toLocaleDateString('es-EC') : '',
     cantidad: '', valor_referencial: null
   }));
-  const buffer = await generarReportePDF({ config, titulo: 'Historial de préstamos', generadoPor: req.user.nombre, activos, formato: 'A4' });
+  const buffer = await generarReportePDF({
+    config, titulo: 'Historial de préstamos', generadoPor: req.user.nombre, activos, formato: 'A4',
+    qrHeaderUrl: urlInventarioDigital()
+  });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'attachment; filename="historial_prestamos.pdf"');
   res.send(buffer);
