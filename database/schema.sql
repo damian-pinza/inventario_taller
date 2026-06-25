@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS configuracion (
   nombre_sistema VARCHAR(100),
   color_primario VARCHAR(20) DEFAULT '#1f6feb',
   dias_alerta_mantenimiento INT DEFAULT 15,
+  direccion VARCHAR(200),                     -- datos del encabezado de los PDF
+  ciudad VARCHAR(100),
+  telefono VARCHAR(50),
+  coordinador_nombre VARCHAR(150),            -- firma de coordinación en reportes/actas
+  rector_nombre VARCHAR(150),                 -- firma de rectorado en reportes/actas
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
