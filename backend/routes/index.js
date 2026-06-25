@@ -73,6 +73,7 @@ router.post('/importar/ejecutar', verifyToken, requireRole('jefe_taller'), impor
 // ===================== REPORTES =====================
 router.get('/reportes/pdf', verifyToken, reportes.pdf);
 router.get('/reportes/excel', verifyToken, reportes.excel);
+router.get('/reportes/acta', verifyToken, reportes.acta);
 router.get('/reportes/etiquetas', verifyToken, reportes.etiquetas);
 router.get('/reportes/prestamos', verifyToken, reportes.prestamos);
 
