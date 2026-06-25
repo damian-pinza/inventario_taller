@@ -61,6 +61,40 @@
             </div>
             <div class="hint small muted" style="margin-top:4px">El logo debe ser un archivo <b>.svg</b> para verse nítido en pantallas y reportes.</div>
 
+            <div class="section-title mt-3">Datos para el encabezado de los reportes</div>
+            <div class="form-grid">
+              <div class="field col-2">
+                <label>Dirección</label>
+                <input type="text" id="cDireccion" placeholder="Ej. Av. Principal y Calle Secundaria">
+              </div>
+              <div class="field">
+                <label>Ciudad</label>
+                <input type="text" id="cCiudad" placeholder="Ej. Quito">
+              </div>
+              <div class="field">
+                <label>Teléfono</label>
+                <input type="text" id="cTelefono" placeholder="Ej. 02 1234567">
+              </div>
+            </div>
+
+            <div class="section-title mt-3">Firmas para reportes y actas</div>
+            <div class="form-grid">
+              <div class="field">
+                <label>Responsable del inventario</label>
+                <input type="text" id="cNombreAdmin2" placeholder="Aparece como primera firma en el inventario general" disabled>
+                <div class="hint">Se toma del campo “Nombre del administrador”. En reportes por taller, la primera firma es el docente responsable de ese taller.</div>
+              </div>
+              <div class="field"></div>
+              <div class="field">
+                <label>Coordinador</label>
+                <input type="text" id="cCoordinador" placeholder="Nombre del coordinador">
+              </div>
+              <div class="field">
+                <label>Rector</label>
+                <input type="text" id="cRector" placeholder="Nombre del rector">
+              </div>
+            </div>
+
             <div class="section-title mt-3">Apariencia y alertas</div>
             <div class="form-grid">
               <div class="field">
@@ -202,6 +236,7 @@
     }
     document.getElementById('cColorPick').addEventListener('input', () => syncColor('pick'));
     document.getElementById('cColorHex').addEventListener('change', () => syncColor('hex'));
+    document.getElementById('cNombreAdmin').addEventListener('input', (e) => { document.getElementById('cNombreAdmin2').value = e.target.value; });
 
     document.getElementById('logoFile').addEventListener('change', (e) => {
       const file = e.target.files[0]; if (!file) return;
@@ -223,6 +258,12 @@
         document.getElementById('cNombreInst').value = c.nombre_institucion || '';
         document.getElementById('cNombreSis').value = c.nombre_sistema || '';
         document.getElementById('cNombreAdmin').value = c.nombre_administrador || '';
+        document.getElementById('cDireccion').value = c.direccion || '';
+        document.getElementById('cCiudad').value = c.ciudad || '';
+        document.getElementById('cTelefono').value = c.telefono || '';
+        document.getElementById('cCoordinador').value = c.coordinador_nombre || '';
+        document.getElementById('cRector').value = c.rector_nombre || '';
+        document.getElementById('cNombreAdmin2').value = c.nombre_administrador || '';
         const color = c.color_primario || '#1f6feb';
         document.getElementById('cColorPick').value = color;
         document.getElementById('cColorHex').value = color;
@@ -241,7 +282,12 @@
           nombre_sistema: document.getElementById('cNombreSis').value.trim() || null,
           nombre_administrador: document.getElementById('cNombreAdmin').value.trim() || null,
           color_primario: document.getElementById('cColorHex').value.trim() || null,
-          dias_alerta_mantenimiento: Number(document.getElementById('cDiasAlerta').value) || null
+          dias_alerta_mantenimiento: Number(document.getElementById('cDiasAlerta').value) || null,
+          direccion: document.getElementById('cDireccion').value.trim(),
+          ciudad: document.getElementById('cCiudad').value.trim(),
+          telefono: document.getElementById('cTelefono').value.trim(),
+          coordinador_nombre: document.getElementById('cCoordinador').value.trim(),
+          rector_nombre: document.getElementById('cRector').value.trim()
         };
         await Api.put('/config', body);
         if (logoSvgPendiente) { await Api.post('/config/logo', { svg: logoSvgPendiente }); logoSvgPendiente = null; }
